@@ -267,6 +267,7 @@ app.post('/api/mint', async (req, res) => {
         collectionMint: collectionMint,
         metadata: {
           name: nftName,
+          symbol: 'PUFF',
           uri: `https://peach-binding-gamefowl-763.mypinata.cloud/ipfs/bafybeiby6jda3blcbvpizf6hxk5wjzmfsx5x3z6xiqz7sfim3i2ciayjoy/${nftNumber}.json`,
           sellerFeeBasisPoints: 500,
           collection: {
@@ -380,7 +381,8 @@ app.post('/api/createCollection', async (req, res) => {
 
     const response = await createNft(umi, {
       mint: collectionMint,
-      name: `PUFF DOG Collection`,
+      name: `PUFF DOG NFT COLLECTION`,
+      symbol: 'PUFF',
       uri: 'https://peach-binding-gamefowl-763.mypinata.cloud/ipfs/bafkreierqb7ckouxee3wvmbj5madkzo5dj524eakn3zvzsovqtu2noggkq',
       sellerFeeBasisPoints: percentAmount(0),
       isCollection: true,
@@ -440,7 +442,8 @@ app.post('/api/mintToCollection', async (req, res) => {
         merkleTree: merkleTreeLink,
         collectionMint: collectionMint, // This is your collection mint address
         metadata: {
-          name: "PUFF DOG Collection",
+          name: "PUFF DOG NFT COLLECTION",
+          symbol: 'PUFF',
           uri: "https://peach-binding-gamefowl-763.mypinata.cloud/ipfs/bafkreierqb7ckouxee3wvmbj5madkzo5dj524eakn3zvzsovqtu2noggkq",
           sellerFeeBasisPoints: 0,
           collection: { key: collectionMint, verified: true },
