@@ -20,8 +20,9 @@ const fs = require('fs').promises;
 
 // Path to the JSON file that will store mint IDs
 const MINT_TRACKING_FILE = path.join(__dirname, 'mint-tracking.json');
-const { Octokit } = require('@octokit/rest');
-
+// const { Octokit } = require('@octokit/rest');
+// At the top with other imports
+const { updateFileOnGitHub } = require('./githubHelper');
 
 const {
   createTree,
@@ -50,14 +51,19 @@ const merkleTreeLink = UMIPublicKey(process.env.MERKLE_TREE);
 const collectionMint = UMIPublicKey(process.env.TOKEN_ADDRESS);
 const AUTHORIZED_WALLET = process.env.AIRDROP_ADMIN_WALLET;
 
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN; // Set this in your Render environment variables
-
+/*
 const OWNER = 'memedev365';
 const REPO = 'PUFFDOG-BE';
 const BRANCH = 'main'; // or whatever branch you're using
 const FILE_PATH = 'mint-tracking.json';
 
 const MAX_SUPPLY = 10000;
+*/
+
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const REPO_OWNER = process.env.GITHUB_REPO_OWNER;
+const REPO_NAME = process.env.GITHUB_REPO_NAME;
+const BRANCH = 'main';
 
 // Store connected SSE clients
 const clients = [];
@@ -116,7 +122,7 @@ app.get('/api/', (req, res) => {
   res.send('successful');
 });
 
-
+/*
 async function updateFileOnGitHub(fileContent) {
   try {
     const octokit = new Octokit({ auth: GITHUB_TOKEN });
@@ -155,7 +161,7 @@ async function updateFileOnGitHub(fileContent) {
     console.error('Error updating file on GitHub:', error);
     return false;
   }
-}
+}*/
 
 
 // Setup Solana/UMI
@@ -265,22 +271,6 @@ async function isIdMinted(id) {
 async function getNextMintId() {
   const trackingData = await loadMintTrackingData();
   return trackingData.lastMintedId + 1;
-}
-
-// Function to record a new minted ID
-async function recordMintedId(id) {
-  const trackingData = await loadMintTrackingData();
-  
-  // Add the ID to the array if it's not already there
-  if (!trackingData.mintedIds.includes(id)) {
-    trackingData.mintedIds.push(id);
-  }
-  
-  // Update the last minted ID
-  trackingData.lastMintedId = id;
-  
-  // Write the updated data back to the file
-  await fs.writeFile(MINT_TRACKING_FILE, JSON.stringify(trackingData, null, 2));
 }
 
 // Mint endpoint
@@ -589,7 +579,7 @@ app.post('/api/airdrop', async (req, res) => {
   }
 });
 
-async function recordAirdropMintedId(id) {
+/*async function recordAirdropMintedId(id) {
   // Load data from local file
   const trackingData = await loadMintTrackingData();
   
@@ -603,7 +593,64 @@ async function recordAirdropMintedId(id) {
   
   // Also update the file on GitHub
   await updateFileOnGitHub(trackingData);
+}*/
+
+async function recordAirdropMintedId(id) {
+  const trackingData = await loadMintTrackingData();
+  
+  // Add the ID to the array if it's not already there
+  if (!trackingData.mintedIds.includes(id)) {
+    trackingData.mintedIds.push(id);
+  }
+  
+  // Note: We do NOT update lastMintedId for airdrops
+  
+  // Write the updated data back to the file
+  const content = JSON.stringify(trackingData, null, 2);
+  await fs.writeFile(MINT_TRACKING_FILE, content);
+  
+  // Update GitHub
+  try {
+    await updateFileOnGitHub(
+      'mint-tracking.json',
+      content,
+      `Airdrop update: NFT #${id}`
+    );
+  } catch (error) {
+    console.error('Failed to update GitHub:', error);
+    // Implement retry logic if needed
+  }
 }
+
+async function recordMintedId(id) {
+  const trackingData = await loadMintTrackingData();
+  
+  // Add the ID to the array if it's not already there
+  if (!trackingData.mintedIds.includes(id)) {
+    trackingData.mintedIds.push(id);
+  }
+  
+  // Update the last minted ID
+  trackingData.lastMintedId = id;
+  
+  // Write the updated data back to the file
+  const content = JSON.stringify(trackingData, null, 2);
+  await fs.writeFile(MINT_TRACKING_FILE, content);
+  
+  // Update GitHub
+  try {
+    await updateFileOnGitHub(
+      'mint-tracking.json',
+      content,
+      `Update mint tracking: NFT #${id}`
+    );
+  } catch (error) {
+    console.error('Failed to update GitHub:', error);
+    // Implement retry logic if needed
+  }
+}
+
+
 
 app.post('/api/createMerkleTree', async (req, res) => {
   try {
