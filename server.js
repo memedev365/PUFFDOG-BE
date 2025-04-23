@@ -55,7 +55,7 @@ const GITHUB_TOKEN = process.env.GITHUB_TOKEN; // Set this in your Render enviro
 const OWNER = 'memedev365';
 const REPO = 'PUFFDOG-BE';
 const BRANCH = 'main'; // or whatever branch you're using
-const FILE_PATH = MINT_TRACKING_FILE;
+const FILE_PATH = 'mint-tracking.json';
 
 const MAX_SUPPLY = 10000;
 
