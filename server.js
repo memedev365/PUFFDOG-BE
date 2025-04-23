@@ -471,6 +471,7 @@ app.post('/api/airdrop', async (req, res) => {
         collectionMint: collectionMint,
         metadata: {
           name: nftName,
+          symbol:'PUFF',
           uri: `https://peach-binding-gamefowl-763.mypinata.cloud/ipfs/bafybeiby6jda3blcbvpizf6hxk5wjzmfsx5x3z6xiqz7sfim3i2ciayjoy/${nftNumber}.json`,
           sellerFeeBasisPoints: 500,
           collection: {
