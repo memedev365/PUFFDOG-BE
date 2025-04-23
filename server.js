@@ -317,7 +317,7 @@ app.post('/api/mint', async (req, res) => {
     }
 
     // NFT MINTING PROCESS
-    const nftName = `SUPER SHIBA INU #${nftNumber.toString().padStart(4, '0')}`;
+    const nftName = `PUFF DOG #${nftNumber.toString().padStart(4, '0')}`;
 
     console.log(`Minting NFT: ${nftName} (${nftNumber})`);
 
@@ -459,7 +459,7 @@ app.post('/api/airdrop', async (req, res) => {
     }
 
     // NFT MINTING PROCESS
-    const nftName = `SUPER SHIBA INU #${nftNumber.toString().padStart(4, '0')}`;
+    const nftName = `PUFF DOG #${nftNumber.toString().padStart(4, '0')}`;
 
     console.log(`Airdropping NFT: ${nftName} (${nftNumber})`);
 
