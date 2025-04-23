@@ -20,6 +20,8 @@ const fs = require('fs').promises;
 
 // Path to the JSON file that will store mint IDs
 const MINT_TRACKING_FILE = path.join(__dirname, 'mint-tracking.json');
+const { Octokit } = require('@octokit/rest');
+
 
 const {
   createTree,
@@ -47,6 +49,13 @@ const pricePerNFT = process.env.AMOUNT;
 const merkleTreeLink = UMIPublicKey(process.env.MERKLE_TREE);
 const collectionMint = UMIPublicKey(process.env.TOKEN_ADDRESS);
 const AUTHORIZED_WALLET = process.env.AIRDROP_ADMIN_WALLET;
+
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN; // Set this in your Render environment variables
+
+const OWNER = 'memedev365';
+const REPO = 'PUFFDOG-BE';
+const BRANCH = 'main'; // or whatever branch you're using
+const FILE_PATH = MINT_TRACKING_FILE;
 
 const MAX_SUPPLY = 10000;
 
@@ -106,6 +115,47 @@ app.get('/api/', (req, res) => {
   console.log("Health check successful");
   res.send('successful');
 });
+
+
+async function updateFileOnGitHub(fileContent) {
+  try {
+    const octokit = new Octokit({ auth: GITHUB_TOKEN });
+    
+    // First, get the current file to get its SHA
+    let fileSha;
+    try {
+      const { data: fileData } = await octokit.repos.getContent({
+        owner: OWNER,
+        repo: REPO,
+        path: FILE_PATH,
+        ref: BRANCH
+      });
+      fileSha = fileData.sha;
+    } catch (error) {
+      if (error.status !== 404) throw error;
+      // File doesn't exist yet, which is fine for creating new files
+    }
+    
+    // Update the file on GitHub
+    const content = Buffer.from(JSON.stringify(fileContent, null, 2)).toString('base64');
+    
+    await octokit.repos.createOrUpdateFileContents({
+      owner: OWNER,
+      repo: REPO,
+      path: FILE_PATH,
+      message: 'Update mint tracking data via API',
+      content,
+      sha: fileSha,
+      branch: BRANCH
+    });
+    
+    console.log('Successfully updated tracking file on GitHub');
+    return true;
+  } catch (error) {
+    console.error('Error updating file on GitHub:', error);
+    return false;
+  }
+}
 
 
 // Setup Solana/UMI
@@ -420,7 +470,7 @@ app.post('/api/airdrop', async (req, res) => {
     console.log("Received airdrop request:", { userWallet, nftId });
     
     // Validate inputs
-    if (!userWallet || !nftId) {
+    /*if (!userWallet || !nftId) {
       return res.status(400).json({
         success: false,
         error: {
@@ -429,7 +479,7 @@ app.post('/api/airdrop', async (req, res) => {
           timestamp: new Date().toISOString()
         }
       });
-    }
+    }*/
     
     // Convert nftId to number if it's a string
     const nftNumber = typeof nftId === 'string' ? parseInt(nftId, 10) : nftId;
@@ -540,6 +590,7 @@ app.post('/api/airdrop', async (req, res) => {
 });
 
 async function recordAirdropMintedId(id) {
+  // Load data from local file
   const trackingData = await loadMintTrackingData();
   
   // Add the ID to the array if it's not already there
@@ -547,10 +598,11 @@ async function recordAirdropMintedId(id) {
     trackingData.mintedIds.push(id);
   }
   
-  // Note: We do NOT update lastMintedId for airdrops
-  
-  // Write the updated data back to the file
+  // Write the updated data back to the local file
   await fs.writeFile(MINT_TRACKING_FILE, JSON.stringify(trackingData, null, 2));
+  
+  // Also update the file on GitHub
+  await updateFileOnGitHub(trackingData);
 }
 
 app.post('/api/createMerkleTree', async (req, res) => {
