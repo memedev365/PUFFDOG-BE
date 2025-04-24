@@ -800,85 +800,123 @@ app.use((err, req, res, next) => {
 
 //--------------------------- verify cNFT Collection ---------------------------------//
 
-// Modified backend code to handle oversized transactions
 app.post('/api/verifyCNFTCollection', async (req, res) => {
   try {
-    console.log("Starting collection verification process...");
     const { leafIndex } = req.body;
-    
+
     if (leafIndex === undefined) {
       return res.status(400).json({
         success: false,
         error: 'Leaf index is required'
       });
     }
-    
-    // Get the asset ID
+
+    // 1. Get the asset ID
     const assetId = findLeafAssetIdPda(umi, {
       merkleTree: merkleTreeLink,
       leafIndex: leafIndex
     })[0];
-    console.log(`Asset ID: ${assetId.toString()}`);
-    
-    // Get the asset with proof data
-    console.log("Fetching asset with proof...");
+
+    // 2. Get the asset with proof data
     const assetWithProof = await getAssetWithProof(umi, assetId, {
-      truncateCanopy: true // Try to reduce proof size
+      truncateCanopy: true
     });
-    
-    // Create a verification transaction
-    console.log("Creating verification transaction...");
-    const txBuilder = verifyCollection(umi, {
+
+    // 3. Create the verify collection transaction builder
+    const verifyBuilder = verifyCollection(umi, {
       ...assetWithProof,
       collectionMint: collectionMint,
       collectionAuthority: umi.identity
     });
-    
-    // Here we use a different approach to send the transaction
-    // Get connection from the environment where it's available
-    const connection = new web3.Connection(
-      process.env.RPC_URL || web3.clusterApiUrl('mainnet-beta'),
-      'confirmed'
+
+    // 4. Create LUT specifically for this transaction
+    const recentSlot = await umi.rpc.getSlot({ commitment: 'finalized' });
+    const [createLutBuilders, lutAccounts] = createLutForTransactionBuilder(
+      umi,
+      verifyBuilder,
+      recentSlot
     );
-    
-    // Build transaction
-    const blockhash = await connection.getLatestBlockhash();
-    
-    // Convert the transaction to something we can send
-    const tx = await txBuilder.toTransaction(umi);
-    
-    // Make sure the transaction is properly signed
-    if (tx.signatures.length === 0) {
-      const signers = [umi.identity];
-      tx.partialSign(...signers);
+
+    // 5. Create the LUTs if needed
+    if (createLutBuilders.length > 0) {
+      console.log('Creating new LUTs for verification');
+      for (const createLutBuilder of createLutBuilders) {
+        await createLutBuilder.sendAndConfirm(umi);
+      }
     }
-    
-    // Serialize the transaction
-    const rawTx = tx.serialize();
-    
-    // Send transaction with skipPreflight to bypass size check
-    console.log("Sending transaction with skipPreflight...");
-    const signature = await connection.sendRawTransaction(rawTx, {
-      skipPreflight: true,
-      maxRetries: 5
-    });
-    
-    console.log(`Transaction sent with signature: ${signature}`);
-    
-    res.json({
-      success: true,
-      message: 'cNFT collection verification transaction submitted successfully',
-      assetId: assetId.toString(),
-      leafIndex: leafIndex,
-      collectionMint: collectionMint.toString(),
-      transactionSignature: signature
-    });
+
+    // 6. Execute the verification with LUT optimization
+    try {
+      const result = await verifyBuilder
+        .setAddressLookupTables(lutAccounts)
+        .sendAndConfirm(umi);
+
+      const signature = bs58.encode(Buffer.from(result.signature));
+      
+      res.json({
+        success: true,
+        message: 'cNFT collection verification successful',
+        assetId: assetId.toString(),
+        leafIndex: leafIndex,
+        collectionMint: collectionMint.toString(),
+        transactionSignature: signature,
+        lutAccounts: lutAccounts.map(account => account.toString())
+      });
+    } catch (txError) {
+      // Fallback to simplified verification if needed
+      if (txError.message && txError.message.includes('too large')) {
+        console.log('Transaction too large, attempting simplified verification...');
+        
+        const simplifiedAssetWithProof = await getAssetWithProof(umi, assetId, {
+          truncateCanopy: true,
+          canopyDepth: 5
+        });
+        
+        const simplifiedBuilder = verifyCollection(umi, {
+          ...simplifiedAssetWithProof,
+          collectionMint: collectionMint,
+          collectionAuthority: umi.identity
+        });
+
+        // Create new LUTs for the simplified transaction
+        const [simplifiedLutBuilders, simplifiedLutAccounts] = createLutForTransactionBuilder(
+          umi,
+          simplifiedBuilder,
+          recentSlot
+        );
+
+        if (simplifiedLutBuilders.length > 0) {
+          for (const createLutBuilder of simplifiedLutBuilders) {
+            await createLutBuilder.sendAndConfirm(umi);
+          }
+        }
+
+        const result = await simplifiedBuilder
+          .setAddressLookupTables(simplifiedLutAccounts)
+          .sendAndConfirm(umi);
+        
+        const signature = bs58.encode(Buffer.from(result.signature));
+        
+        res.json({
+          success: true,
+          message: 'cNFT collection verification successful (with reduced proof size)',
+          assetId: assetId.toString(),
+          leafIndex: leafIndex,
+          collectionMint: collectionMint.toString(),
+          transactionSignature: signature,
+          lutAccounts: simplifiedLutAccounts.map(account => account.toString())
+        });
+      } else {
+        throw txError;
+      }
+    }
+
   } catch (error) {
     console.error('Collection verification failed:', error);
     res.status(500).json({
       success: false,
       error: error.message,
-      details: 'Collection verification failed - transaction size issue'
+      details: 'Make sure the leaf index is correct and you have authority over the collection'
     });
   }
 });
