@@ -810,9 +810,9 @@ app.post('/api/parentNFTVerify', async (req, res) => {
     console.log(`Parent NFT mint: ${parentNftMint.toString()}`);
     console.log(`Update authority: ${updateAuthority.toString()}`);
     
-    // Verify the parent NFT as a collection
+    // Verify the parent NFT as a collection - use proper parameter name
     const transaction = await verifyCollection(umi, {
-      mint: parentNftMint,
+      collectionMint: parentNftMint,  // Changed from 'mint' to 'collectionMint'
       collectionAuthority: updateAuthority,
       isDelegated: false, // Set to true only if you're using a delegated authority
     }).sendAndConfirm(umi);
@@ -837,7 +837,6 @@ app.post('/api/parentNFTVerify', async (req, res) => {
     });
   }
 });
-
 
 app.post('/api/verifyCNFTCollection', async (req, res) => {
   try {
