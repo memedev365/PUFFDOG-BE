@@ -802,7 +802,7 @@ app.use((err, req, res, next) => {
 // Modified backend code to handle oversized transactions
 app.post('/api/verifyCNFTCollection', async (req, res) => {
   try {
-    console.log("Starting collection verification process...");
+    console.log("Starting direct RPC collection verification process...");
     const { leafIndex } = req.body;
     
     if (leafIndex === undefined) {
@@ -812,39 +812,50 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       });
     }
     
-    // Get the asset ID
+    // Get the asset ID using your existing function
     const assetId = findLeafAssetIdPda(umi, {
       merkleTree: merkleTreeLink,
       leafIndex: leafIndex
     })[0];
     console.log(`Asset ID: ${assetId.toString()}`);
     
-    // Get the asset with proof data - we'll use this directly
-    console.log("Fetching asset with proof...");
+    // Get asset with proof using your existing function
     const assetWithProof = await getAssetWithProof(umi, assetId, {
-      truncateCanopy: true // Try to reduce proof size
+      truncateCanopy: true
     });
     
-    // Create a verification builder
-    console.log("Creating verification builder...");
-    const builder = verifyCollection(umi, {
+    // Get the web3.js connection directly
+    const connection = umi.rpc.getConnection();
+    
+    // Use the lower-level Metaplex methods to build transaction
+    console.log("Building verification transaction...");
+    
+    // Create the transaction instructions
+    const ix = verifyCollection(umi, {
       ...assetWithProof,
       collectionMint: collectionMint,
       collectionAuthority: umi.identity
+    }).getInstructions();
+    
+    // Create a legacy transaction (smaller size)
+    const latestBlockhash = await connection.getLatestBlockhash();
+    
+    const transaction = new web3.Transaction({
+      feePayer: umi.identity.publicKey,
+      blockhash: latestBlockhash.blockhash,
+      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
     });
     
-    console.log("Building transaction...");
-    // Get transaction instructions
-    const blockhash = await umi.rpc.getLatestBlockhash();
-    const tx = await builder.buildAndSign(umi, blockhash);
+    // Add all instructions
+    transaction.add(...ix);
+    
+    // Sign transaction
+    const signedTx = await umi.identity.signTransaction(transaction);
+    const serializedTx = signedTx.serialize();
     
     // Send transaction with skipPreflight
     console.log("Sending transaction with skipPreflight...");
-    const connection = umi.rpc.getConnection();
-    
-    // Use the lower-level sendRawTransaction method with skipPreflight
-    const rawTx = tx.serialize();
-    const signature = await connection.sendRawTransaction(rawTx, {
+    const signature = await connection.sendRawTransaction(serializedTx, {
       skipPreflight: true,
       maxRetries: 5
     });
@@ -853,7 +864,7 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
     
     res.json({
       success: true,
-      message: 'cNFT collection verification transaction submitted (with skipPreflight)',
+      message: 'cNFT collection verification transaction submitted via direct RPC',
       assetId: assetId.toString(),
       leafIndex: leafIndex,
       collectionMint: collectionMint.toString(),
@@ -864,7 +875,7 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message,
-      details: 'Collection verification failed - transaction size issue'
+      details: 'Collection verification failed - transaction size issue' 
     });
   }
 });
