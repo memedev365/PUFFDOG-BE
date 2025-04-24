@@ -15,8 +15,6 @@ const helmet = require('helmet');
 const upload = require('express-fileupload');
 const morgan = require('morgan');
 const txTracker = require('./helper/txTracker');
-const { verifyCollection } = require("@metaplex-foundation/mpl-bubblegum");
-
 const fs = require('fs').promises;
 
 // Path to the JSON file that will store mint IDs
@@ -854,7 +852,7 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
 });
 
 // Add this endpoint to verify the entire collection setup
-app.get('/api/verifyCollectionSetup', async (req, res) => {
+app.get('/api/Setup', async (req, res) => {
   try {
     // 1. Verify collection NFT exists
     const collectionAsset = await umi.rpc.getAsset(collectionMint);
