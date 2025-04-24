@@ -36,7 +36,8 @@ const {
   LeafSchema,
   mintToCollectionV1,
   parseLeafFromMintToCollectionV1Transaction,
-  setAndVerifyCollection
+  setAndVerifyCollection,
+  fetchDigitalAsset
 } = require('@metaplex-foundation/mpl-bubblegum');
 
 // Create the Express app
@@ -803,21 +804,21 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
   try {
     console.log("Starting collection verification process...");
     const { leafIndex } = req.body;
-
+    
     if (leafIndex === undefined) {
       return res.status(400).json({
         success: false,
         error: 'Leaf index is required'
       });
     }
-
+    
     // Get the asset ID
     const assetId = findLeafAssetIdPda(umi, {
       merkleTree: merkleTreeLink,
       leafIndex: leafIndex
     })[0];
     console.log(`Asset ID: ${assetId.toString()}`);
-
+    
     // Get asset data without full proof
     console.log("Fetching digital asset...");
     const asset = await fetchDigitalAsset(umi, assetId);
@@ -832,7 +833,7 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       // Skip the full proof data to reduce transaction size
       proof: [] // Empty proof since we'll use skipPreflight
     });
-
+    
     console.log("Preparing to send transaction...");
     // Build and sign the transaction 
     const tx = await builder.buildAndSign(umi);
@@ -846,7 +847,7 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
     // Convert signature to readable format
     const signatureStr = bs58.encode(Buffer.from(signature));
     console.log(`Transaction sent: ${signatureStr}`);
-
+    
     res.json({
       success: true,
       message: 'cNFT collection verification transaction submitted (with skipPreflight)',
@@ -855,7 +856,6 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       collectionMint: collectionMint.toString(),
       transactionSignature: signatureStr
     });
-
   } catch (error) {
     console.error('Collection verification failed:', error);
     res.status(500).json({
@@ -865,7 +865,6 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
     });
   }
 });
-
 
 //--------------------------- verify cNFT Collection ---------------------------------//
 
