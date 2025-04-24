@@ -813,9 +813,9 @@ app.post('/api/setAndVerifyCollection', async (req, res) => {
        await verifyCollectionV1(umi, {
          metadata,
          collectionMint,
-         authority: collectionAuthority,
+         authority: umi.identity,
        }).sendAndConfirm(umi)
-  } catch(err){
+         } catch(err){
          console.log("err :" + err);
   }
     
