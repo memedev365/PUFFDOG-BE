@@ -17,6 +17,7 @@ const morgan = require('morgan');
 const txTracker = require('./helper/txTracker');
 const fs = require('fs').promises;
 const { equals } = require('@metaplex-foundation/umi');
+const web3 = require('@solana/web3.js');
 
 // Path to the JSON file that will store mint IDs
 const MINT_TRACKING_FILE = path.join(__dirname, 'mint-tracking.json');
@@ -802,7 +803,7 @@ app.use((err, req, res, next) => {
 // Modified backend code to handle oversized transactions
 app.post('/api/verifyCNFTCollection', async (req, res) => {
   try {
-    console.log("Starting direct RPC collection verification process...");
+    console.log("Starting collection verification process...");
     const { leafIndex } = req.body;
     
     if (leafIndex === undefined) {
@@ -812,50 +813,52 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       });
     }
     
-    // Get the asset ID using your existing function
+    // Get the asset ID
     const assetId = findLeafAssetIdPda(umi, {
       merkleTree: merkleTreeLink,
       leafIndex: leafIndex
     })[0];
     console.log(`Asset ID: ${assetId.toString()}`);
     
-    // Get asset with proof using your existing function
+    // Get the asset with proof data
+    console.log("Fetching asset with proof...");
     const assetWithProof = await getAssetWithProof(umi, assetId, {
-      truncateCanopy: true
+      truncateCanopy: true // Try to reduce proof size
     });
     
-    // Get the web3.js connection directly
-    const connection = umi.rpc.getConnection();
-    
-    // Use the lower-level Metaplex methods to build transaction
-    console.log("Building verification transaction...");
-    
-    // Create the transaction instructions
-    const ix = verifyCollection(umi, {
+    // Create a verification transaction
+    console.log("Creating verification transaction...");
+    const txBuilder = verifyCollection(umi, {
       ...assetWithProof,
       collectionMint: collectionMint,
       collectionAuthority: umi.identity
-    }).getInstructions();
-    
-    // Create a legacy transaction (smaller size)
-    const latestBlockhash = await connection.getLatestBlockhash();
-    
-    const transaction = new web3.Transaction({
-      feePayer: umi.identity.publicKey,
-      blockhash: latestBlockhash.blockhash,
-      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
     });
     
-    // Add all instructions
-    transaction.add(...ix);
+    // Here we use a different approach to send the transaction
+    // Get connection from the environment where it's available
+    const connection = new web3.Connection(
+      process.env.RPC_URL || web3.clusterApiUrl('mainnet-beta'),
+      'confirmed'
+    );
     
-    // Sign transaction
-    const signedTx = await umi.identity.signTransaction(transaction);
-    const serializedTx = signedTx.serialize();
+    // Build transaction
+    const blockhash = await connection.getLatestBlockhash();
     
-    // Send transaction with skipPreflight
+    // Convert the transaction to something we can send
+    const tx = await txBuilder.toTransaction(umi);
+    
+    // Make sure the transaction is properly signed
+    if (tx.signatures.length === 0) {
+      const signers = [umi.identity];
+      tx.partialSign(...signers);
+    }
+    
+    // Serialize the transaction
+    const rawTx = tx.serialize();
+    
+    // Send transaction with skipPreflight to bypass size check
     console.log("Sending transaction with skipPreflight...");
-    const signature = await connection.sendRawTransaction(serializedTx, {
+    const signature = await connection.sendRawTransaction(rawTx, {
       skipPreflight: true,
       maxRetries: 5
     });
@@ -864,7 +867,7 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
     
     res.json({
       success: true,
-      message: 'cNFT collection verification transaction submitted via direct RPC',
+      message: 'cNFT collection verification transaction submitted successfully',
       assetId: assetId.toString(),
       leafIndex: leafIndex,
       collectionMint: collectionMint.toString(),
@@ -875,7 +878,7 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message,
-      details: 'Collection verification failed - transaction size issue' 
+      details: 'Collection verification failed - transaction size issue'
     });
   }
 });
