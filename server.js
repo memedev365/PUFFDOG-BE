@@ -801,6 +801,34 @@ app.use((err, req, res, next) => {
 
 //--------------------------- verify cNFT Collection ---------------------------------//
 
+app.post('/api/setAndVerifyCollection', async (req, res) => {
+  try {
+    await setAndVerifyCollection(umi, {
+      metadata: findMetadataPda(umi, { mint: collectionMint }),
+      collectionAuthority: umi.identity,
+      payer: umi.identity,
+      collectionMint,
+      collectionMetadata: findMetadataPda(umi, { mint: collectionMint }),
+      collectionMasterEdition: findMasterEditionPda(umi, { mint: collectionMint }),
+    }).sendAndConfirm(umi);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Successfully verified as collection',
+      transactionSignature: transaction.signature.toString()
+    });
+
+  } catch (err) {
+    console.log(err);
+    // Return error response
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to verify',
+      error: err.message
+    });
+  }
+});
+
 app.post('/api/parentNFTVerify', async (req, res) => {
   try {
     const parentNftMint = new PublicKey('73itZp41Td5nj8z2AnQhGmbequoqtPNXvjxbDw1hj3Rn');
