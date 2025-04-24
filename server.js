@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createUmi } = require('@metaplex-foundation/umi-bundle-defaults');
-const { keypairIdentity, publicKey, transactionBuilder, generateSigner } = require('@metaplex-foundation/umi');
+const { keypairIdentity, transactionBuilder, generateSigner } = require('@metaplex-foundation/umi');
 const { mplTokenMetadata, createNft, verifyCollectionV1, setAndVerifyCollection, findMetadataPda, findMasterEditionPda } = require('@metaplex-foundation/mpl-token-metadata');
 const { setComputeUnitLimit, createLut  } = require('@metaplex-foundation/mpl-toolbox');
 const { Connection, SystemProgram, PublicKey, LAMPORTS_PER_SOL, Keypair } = require('@solana/web3.js');
@@ -802,36 +802,39 @@ app.use((err, req, res, next) => {
 //--------------------------- verify cNFT Collection ---------------------------------//
 
 app.post('/api/setAndVerifyCollection', async (req, res) => {
-  try {
-    await setAndVerifyCollection(umi, {
-      metadata: findMetadataPda(umi, { mint: collectionMint }),
-      collectionAuthority: umi.identity,
-      payer: umi.identity,
-      collectionMint,
-      collectionMetadata: findMetadataPda(umi, { mint: collectionMint }),
-      collectionMasterEdition: findMasterEditionPda(umi, { mint: collectionMint }),
-    }).sendAndConfirm(umi);
+  // Your collection mint
+  try{
+  const collectionMint = UMIPublicKey("73itZp41Td5nj8z2AnQhGmbequoqtPNXvjxbDw1hj3Rn");
 
-    return res.status(200).json({
-      success: true,
-      message: 'Successfully verified as collection',
-      transactionSignature: transaction.signature.toString()
-    });
+  await verifyCollection(umi, {
+    metadata: findMetadataPda(umi, { mint: collectionMint }),
+    collectionAuthority: umi.identity,
+    payer: umi.identity,
+    collectionMint,
+    collectionMetadata: findMetadataPda(umi, { mint: collectionMint }),
+    collectionMasterEdition: findMasterEditionPda(umi, { mint: collectionMint }),
+  }).sendAndConfirm(umi);
+  console.log("✅ Collection NFT has been verified");
 
-  } catch (err) {
-    console.log(err);
-    // Return error response
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to verify',
-      error: err.message
-    });
-  }
+  return res.status(200).json({
+    success: true,
+    message: 'NFT successfully verified as collection',
+    transactionSignature: transaction.signature.toString()
+  });
+
+}catch(err){
+  return res.status(500).json({
+    success: false,
+    message: 'Failed to verify NFT as collection',
+    error: err.message
+  });
+}
+
 });
 
 app.post('/api/parentNFTVerify', async (req, res) => {
   try {
-    const parentNftMint = new PublicKey('73itZp41Td5nj8z2AnQhGmbequoqtPNXvjxbDw1hj3Rn');
+    const parentNftMint = new licKey('73itZp41Td5nj8z2AnQhGmbequoqtPNXvjxbDw1hj3Rn');
     const updateAuthority = new PublicKey('4mGCSmGmfAfq7uvLpV39uQRTLuveGX2EHk6iuN38YRLn');
     
     console.log('Attempting to verify parent NFT as collection...');
