@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { createUmi } = require('@metaplex-foundation/umi-bundle-defaults');
 const { keypairIdentity, transactionBuilder, generateSigner } = require('@metaplex-foundation/umi');
-const { mplTokenMetadata, createNft, verifyCollectionV1, setAndVerifyCollection, findMetadataPda, findMasterEditionPda } = require('@metaplex-foundation/mpl-token-metadata');
+const { mplTokenMetadata, createNft, verifyCollection, findMetadataPda, setAndVerifyCollection, findMetadataPda, findMasterEditionPda } = require('@metaplex-foundation/mpl-token-metadata');
 const { setComputeUnitLimit, createLut  } = require('@metaplex-foundation/mpl-toolbox');
 const { Connection, SystemProgram, PublicKey, LAMPORTS_PER_SOL, Keypair } = require('@solana/web3.js');
 const bs58 = require('bs58');
@@ -31,7 +31,7 @@ const {
   mplBubblegum,
   fetchMerkleTree,
   fetchTreeConfigFromSeeds,
-  verifyCollection,
+  //verifyCollection,
   TokenProgramVersion,
   getAssetWithProof,
   findLeafAssetIdPda,
