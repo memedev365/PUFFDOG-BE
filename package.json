@@ -13,7 +13,7 @@
     "@metaplex-foundation/mpl-bubblegum": "^4.4.0",
     "@metaplex-foundation/mpl-token-metadata": "^3.4.0",
     "@metaplex-foundation/mpl-toolbox": "^0.10.0",
-    "@metaplex-foundation/umi": "^1.1.1",
+    "@metaplex-foundation/umi": "^1.2.0",
     "@metaplex-foundation/umi-bundle-defaults": "^1.1.1",
     "@octokit/rest": "^21.1.1",
     "@solana/web3.js": "^1.98.0",
