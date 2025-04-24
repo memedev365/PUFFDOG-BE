@@ -15,6 +15,7 @@ const helmet = require('helmet');
 const upload = require('express-fileupload');
 const morgan = require('morgan');
 const txTracker = require('./helper/txTracker');
+const { verifyCollection } = require("@metaplex-foundation/mpl-bubblegum");
 
 const fs = require('fs').promises;
 
@@ -121,47 +122,6 @@ app.get('/api/', (req, res) => {
   console.log("Health check successful");
   res.send('successful');
 });
-
-/*
-async function updateFileOnGitHub(fileContent) {
-  try {
-    const octokit = new Octokit({ auth: GITHUB_TOKEN });
-    
-    // First, get the current file to get its SHA
-    let fileSha;
-    try {
-      const { data: fileData } = await octokit.repos.getContent({
-        owner: OWNER,
-        repo: REPO,
-        path: FILE_PATH,
-        ref: BRANCH
-      });
-      fileSha = fileData.sha;
-    } catch (error) {
-      if (error.status !== 404) throw error;
-      // File doesn't exist yet, which is fine for creating new files
-    }
-    
-    // Update the file on GitHub
-    const content = Buffer.from(JSON.stringify(fileContent, null, 2)).toString('base64');
-    
-    await octokit.repos.createOrUpdateFileContents({
-      owner: OWNER,
-      repo: REPO,
-      path: FILE_PATH,
-      message: 'Update mint tracking data via API',
-      content,
-      sha: fileSha,
-      branch: BRANCH
-    });
-    
-    console.log('Successfully updated tracking file on GitHub');
-    return true;
-  } catch (error) {
-    console.error('Error updating file on GitHub:', error);
-    return false;
-  }
-}*/
 
 
 // Setup Solana/UMI
@@ -579,21 +539,6 @@ app.post('/api/airdrop', async (req, res) => {
   }
 });
 
-/*async function recordAirdropMintedId(id) {
-  // Load data from local file
-  const trackingData = await loadMintTrackingData();
-  
-  // Add the ID to the array if it's not already there
-  if (!trackingData.mintedIds.includes(id)) {
-    trackingData.mintedIds.push(id);
-  }
-  
-  // Write the updated data back to the local file
-  await fs.writeFile(MINT_TRACKING_FILE, JSON.stringify(trackingData, null, 2));
-  
-  // Also update the file on GitHub
-  await updateFileOnGitHub(trackingData);
-}*/
 
 async function recordAirdropMintedId(id) {
   const trackingData = await loadMintTrackingData();
@@ -773,31 +718,6 @@ app.post('/api/mintToCollection', async (req, res) => {
       confirm: { commitment: "finalized" },
     });
 
-    /*const txid = bs58.encode(Buffer.from(signature));
-    const leaf = await parseLeafFromMintToCollectionV1Transaction(umi, signature);
-
-    // Get the asset ID (equivalent to mint address for cNFTs)
-    const assetId = findLeafAssetIdPda(umi, {
-      merkleTree: merkleTreeLink,
-      leafIndex: leaf.nonce,
-    })[0];
-
-    // Get the asset details
-    const rpcAsset = await umi.rpc.getAsset(assetId);
-
-    res.json({
-      success: true,
-      collectionMint: collectionMint.toString(), // The collection mint address
-      nft: {
-        assetId: assetId.toString(), // The cNFT identifier (similar to mint address)
-        txid: txid, // Transaction ID
-        leafIndex: leaf.nonce, // Position in the merkle tree
-        metadataUri: rpcAsset.content.json_uri, // NFT metadata URI
-        owner: rpcAsset.ownership.owner, // Current owner
-        // Include any other relevant details from rpcAsset
-      }
-    });
-*/
 
     console.log("signature : " + signature);
 
@@ -875,6 +795,112 @@ app.use((err, req, res, next) => {
   console.error('Server error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
+
+
+//--------------------------- verify cNFT Collection ---------------------------------//
+
+
+
+// Add this endpoint to verify collection for a specific cNFT
+app.post('/api/verifyCNFTCollection', async (req, res) => {
+  try {
+    const { leafIndex } = req.body; // The index of the NFT in your merkle tree
+
+    if (!leafIndex && leafIndex !== 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Leaf index is required'
+      });
+    }
+
+    // 1. Get the asset ID (PDA derived from tree + leaf index)
+    const assetId = findLeafAssetIdPda(umi, {
+      merkleTree: merkleTreeLink,
+      leafIndex: leafIndex
+    })[0];
+
+    // 2. Get the asset with proof data
+    const assetWithProof = await getAssetWithProof(umi, assetId, {
+      truncateCanopy: true // Important for proof verification
+    });
+
+    // 3. Verify the collection
+    const result = await verifyCollection(umi, {
+      ...assetWithProof,
+      collectionMint: collectionMint,
+      collectionAuthority: umi.identity // Your wallet as authority
+    }).sendAndConfirm(umi);
+
+    // Convert signature to readable format
+    const signature = bs58.encode(Buffer.from(result.signature));
+
+    res.json({
+      success: true,
+      message: 'cNFT collection verification successful',
+      assetId: assetId.toString(),
+      leafIndex: leafIndex,
+      collectionMint: collectionMint.toString(),
+      transactionSignature: signature
+    });
+
+  } catch (error) {
+    console.error('Collection verification failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      details: 'Make sure the leaf index is correct and you have authority over the collection'
+    });
+  }
+});
+
+// Add this endpoint to verify the entire collection setup
+app.get('/api/verifyCollectionSetup', async (req, res) => {
+  try {
+    // 1. Verify collection NFT exists
+    const collectionAsset = await umi.rpc.getAsset(collectionMint);
+    
+    if (!collectionAsset) {
+      throw new Error('Collection NFT not found on chain');
+    }
+
+    // 2. Verify merkle tree connection
+    const treeConfig = await fetchTreeConfigFromSeeds(umi, {
+      merkleTree: merkleTreeLink
+    });
+
+    // 3. Verify authority
+    const isAuthority = umi.identity.publicKey.equals(collectionAsset.update_authority);
+    
+    if (!isAuthority) {
+      throw new Error('Current signer is not the collection authority');
+    }
+
+    res.json({
+      success: true,
+      collectionVerified: true,
+      collectionDetails: {
+        mint: collectionMint.toString(),
+        updateAuthority: collectionAsset.update_authority.toString(),
+        merkleTree: merkleTreeLink.toString(),
+        treeDepth: treeConfig.treeDepth,
+        currentLeafCount: treeConfig.numMinted.toString()
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      verificationFailedAt: error.stack?.split('\n')[0]
+    });
+  }
+});
+
+
+
+//--------------------------- verify cNFT Collection ---------------------------------//
+
+
 
 // Start the server
 const PORT = process.env.PORT || 3001;
