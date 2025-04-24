@@ -867,11 +867,7 @@ app.get('/api/verifyCollectionSetup', async (req, res) => {
     });
 
     // 3. Verify authority
-    const isAuthority = umi.identity.publicKey.equals(collectionAsset.update_authority);
-    
-    if (!isAuthority) {
-      throw new Error('Current signer is not the collection authority');
-    }
+   const isAuthority = equals(umi.identity.publicKey, collectionAsset.update_authority);
 
     res.json({
       success: true,
