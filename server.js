@@ -852,7 +852,7 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
 });
 
 // Add this endpoint to verify the entire collection setup
-app.get('/api/Setup', async (req, res) => {
+app.get('/api/verifyCollectionSetup', async (req, res) => {
   try {
     // 1. Verify collection NFT exists
     const collectionAsset = await umi.rpc.getAsset(collectionMint);
