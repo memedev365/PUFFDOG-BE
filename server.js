@@ -803,6 +803,8 @@ app.use((err, req, res, next) => {
 
 app.post('/api/setAndVerifyCollection', async (req, res) => {
   // Your collection mint
+    console.log("✅ setAndVerifyCollection Running");
+
   try{
   const collectionMint = UMIPublicKey("73itZp41Td5nj8z2AnQhGmbequoqtPNXvjxbDw1hj3Rn");
 
@@ -823,6 +825,7 @@ app.post('/api/setAndVerifyCollection', async (req, res) => {
   });
 
 }catch(err){
+    console.log("err :" + err);
   return res.status(500).json({
     success: false,
     message: 'Failed to verify NFT as collection',
