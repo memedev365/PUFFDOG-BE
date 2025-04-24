@@ -798,14 +798,12 @@ app.use((err, req, res, next) => {
 
 //--------------------------- verify cNFT Collection ---------------------------------//
 
-
-
-// Add this endpoint to verify collection for a specific cNFT
+// Modified backend code to handle oversized transactions
 app.post('/api/verifyCNFTCollection', async (req, res) => {
   try {
-    const { leafIndex } = req.body; // The index of the NFT in your merkle tree
+    const { leafIndex } = req.body;
 
-    if (!leafIndex && leafIndex !== 0) {
+    if (leafIndex === undefined) {
       return res.status(400).json({
         success: false,
         error: 'Leaf index is required'
@@ -823,24 +821,64 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       truncateCanopy: true // Important for proof verification
     });
 
-    // 3. Verify the collection
-    const result = await verifyCollection(umi, {
-      ...assetWithProof,
-      collectionMint: collectionMint,
-      collectionAuthority: umi.identity // Your wallet as authority
-    }).sendAndConfirm(umi);
-
-    // Convert signature to readable format
-    const signature = bs58.encode(Buffer.from(result.signature));
-
-    res.json({
-      success: true,
-      message: 'cNFT collection verification successful',
-      assetId: assetId.toString(),
-      leafIndex: leafIndex,
-      collectionMint: collectionMint.toString(),
-      transactionSignature: signature
-    });
+    // 3. Verify the collection - but handle transaction size issues
+    try {
+      // First attempt with full proof
+      const result = await verifyCollection(umi, {
+        ...assetWithProof,
+        collectionMint: collectionMint,
+        collectionAuthority: umi.identity
+      }).sendAndConfirm(umi);
+      
+      // Convert signature to readable format
+      const signature = bs58.encode(Buffer.from(result.signature));
+      
+      res.json({
+        success: true,
+        message: 'cNFT collection verification successful',
+        assetId: assetId.toString(),
+        leafIndex: leafIndex,
+        collectionMint: collectionMint.toString(),
+        transactionSignature: signature
+      });
+    } catch (txError) {
+      // Check if it's a transaction size error
+      if (txError.message && txError.message.includes('too large')) {
+        console.log('Transaction too large, attempting simplified verification...');
+        
+        // Use canopyDepth to reduce proof size
+        // Calculate a reasonable canopy depth based on your tree size
+        // This reduces the amount of proof data included in the transaction
+        const canopyDepth = 5; // Adjust as needed
+        
+        const simplifiedAssetWithProof = await getAssetWithProof(umi, assetId, {
+          truncateCanopy: true,
+          canopyDepth: canopyDepth
+        });
+        
+        // Try with simplified proof
+        const result = await verifyCollection(umi, {
+          ...simplifiedAssetWithProof,
+          collectionMint: collectionMint,
+          collectionAuthority: umi.identity
+        }).sendAndConfirm(umi);
+        
+        // Convert signature to readable format
+        const signature = bs58.encode(Buffer.from(result.signature));
+        
+        res.json({
+          success: true,
+          message: 'cNFT collection verification successful (with reduced proof size)',
+          assetId: assetId.toString(),
+          leafIndex: leafIndex,
+          collectionMint: collectionMint.toString(),
+          transactionSignature: signature
+        });
+      } else {
+        // If it's not a size error, rethrow
+        throw txError;
+      }
+    }
 
   } catch (error) {
     console.error('Collection verification failed:', error);
@@ -848,45 +886,6 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       success: false,
       error: error.message,
       details: 'Make sure the leaf index is correct and you have authority over the collection'
-    });
-  }
-});
-
-// Add this endpoint to verify the entire collection setup
-app.get('/api/verifyCollectionSetup', async (req, res) => {
-  try {
-    // 1. Verify collection NFT exists
-    const collectionAsset = await umi.rpc.getAsset(collectionMint);
-    
-    if (!collectionAsset) {
-      throw new Error('Collection NFT not found on chain');
-    }
-
-    // 2. Verify merkle tree connection
-    const treeConfig = await fetchTreeConfigFromSeeds(umi, {
-      merkleTree: merkleTreeLink
-    });
-
-    // 3. Verify authority
-   const isAuthority = equals(umi.identity.publicKey, collectionAsset.update_authority);
-
-    res.json({
-      success: true,
-      collectionVerified: true,
-      collectionDetails: {
-        mint: collectionMint.toString(),
-        updateAuthority: collectionAsset.update_authority.toString(),
-        merkleTree: merkleTreeLink.toString(),
-        treeDepth: treeConfig.treeDepth,
-        currentLeafCount: treeConfig.numMinted.toString()
-      }
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      verificationFailedAt: error.stack?.split('\n')[0]
     });
   }
 });
