@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { createUmi } = require('@metaplex-foundation/umi-bundle-defaults');
 const { keypairIdentity, transactionBuilder, generateSigner } = require('@metaplex-foundation/umi');
-const { mplTokenMetadata, createNft, verifyCollection, setAndVerifyCollection, findMetadataPda, findMasterEditionPda } = require('@metaplex-foundation/mpl-token-metadata');
+const { mplTokenMetadata, createNft, verifyCollection, setAndVerifyCollection, findMetadataPda, findMasterEditionPda, findCollectionAuthorityRecordPda, findDelegateRecordPda } = require('@metaplex-foundation/mpl-token-metadata');
 const { setComputeUnitLimit, createLut  } = require('@metaplex-foundation/mpl-toolbox');
 const { Connection, SystemProgram, PublicKey, LAMPORTS_PER_SOL, Keypair } = require('@solana/web3.js');
 const bs58 = require('bs58');
@@ -805,13 +805,30 @@ app.post('/api/setAndVerifyCollection', async (req, res) => {
   try {
     const collectionMint = UMIPublicKey("73itZp41Td5nj8z2AnQhGmbequoqtPNXvjxbDw1hj3Rn");
 
+    const metadata = findMetadataPda(umi, { mint: collectionMint });
+    const masterEdition = findMasterEditionPda(umi, { mint: collectionMint });
+
+    const collectionAuthorityRecord = findCollectionAuthorityRecordPda(umi, {
+      mint: collectionMint,
+      collectionAuthority: umi.identity.publicKey,
+    });
+
+    const delegateRecord = findDelegateRecordPda(umi, {
+      mint: collectionMint,
+      updateAuthority: umi.identity.publicKey,
+      delegateRole: 4, // Collection verification role (enum: Collection)
+      delegate: umi.identity.publicKey,
+    });
+
     const tx = await setAndVerifyCollection(umi, {
-      metadata: findMetadataPda(umi, { mint: collectionMint }),
+      metadata,
       collectionAuthority: umi.identity,
       payer: umi.identity,
       collectionMint,
-      collectionMetadata: findMetadataPda(umi, { mint: collectionMint }),
-      collectionMasterEdition: findMasterEditionPda(umi, { mint: collectionMint }),
+      collectionMetadata: metadata,
+      collectionMasterEdition: masterEdition,
+      collectionAuthorityRecord,
+      delegateRecord
     }).sendAndConfirm(umi);
 
     console.log("✅ Collection NFT has been verified");
