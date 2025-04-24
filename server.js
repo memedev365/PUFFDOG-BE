@@ -802,37 +802,34 @@ app.use((err, req, res, next) => {
 //--------------------------- verify cNFT Collection ---------------------------------//
 
 app.post('/api/setAndVerifyCollection', async (req, res) => {
-  // Your collection mint
-    console.log("✅ setAndVerifyCollection Running");
+  try {
+    const collectionMint = UMIPublicKey("73itZp41Td5nj8z2AnQhGmbequoqtPNXvjxbDw1hj3Rn");
 
-  try{
-  const collectionMint = UMIPublicKey("73itZp41Td5nj8z2AnQhGmbequoqtPNXvjxbDw1hj3Rn");
+    const tx = await setAndVerifyCollection(umi, {
+      metadata: findMetadataPda(umi, { mint: collectionMint }),
+      collectionAuthority: umi.identity,
+      payer: umi.identity,
+      collectionMint,
+      collectionMetadata: findMetadataPda(umi, { mint: collectionMint }),
+      collectionMasterEdition: findMasterEditionPda(umi, { mint: collectionMint }),
+    }).sendAndConfirm(umi);
 
-  await verifyCollection(umi, {
-    metadata: findMetadataPda(umi, { mint: collectionMint }),
-    collectionAuthority: umi.identity,
-    payer: umi.identity,
-    collectionMint,
-    collectionMetadata: findMetadataPda(umi, { mint: collectionMint }),
-    collectionMasterEdition: findMasterEditionPda(umi, { mint: collectionMint }),
-  }).sendAndConfirm(umi);
-  console.log("✅ Collection NFT has been verified");
+    console.log("✅ Collection NFT has been verified");
 
-  return res.status(200).json({
-    success: true,
-    message: 'NFT successfully verified as collection',
-    transactionSignature: transaction.signature.toString()
-  });
+    return res.status(200).json({
+      success: true,
+      message: 'NFT successfully verified as collection',
+      transactionSignature: tx.signature.toString()
+    });
 
-}catch(err){
-    console.log("err :" + err);
-  return res.status(500).json({
-    success: false,
-    message: 'Failed to verify NFT as collection',
-    error: err.message
-  });
-}
-
+  } catch (err) {
+    console.error("❌ Failed to verify collection:", err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to verify NFT as collection',
+      error: err.message
+    });
+  }
 });
 
 app.post('/api/parentNFTVerify', async (req, res) => {
