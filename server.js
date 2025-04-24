@@ -830,98 +830,115 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       collectionAuthority: umi.identity
     });
 
-    // 4. Create LUT specifically for this transaction
-    const recentSlot = await umi.rpc.getSlot({ commitment: 'finalized' });
-    const [createLutBuilders, lutAccounts] = createLutForTransactionBuilder(
-      umi,
-      verifyBuilder,
-      recentSlot
-    );
-
-    // 5. Create the LUTs if needed
-    if (createLutBuilders.length > 0) {
-      console.log('Creating new LUTs for verification');
-      for (const createLutBuilder of createLutBuilders) {
-        await createLutBuilder.sendAndConfirm(umi);
-      }
-    }
-
-    // 6. Execute the verification with LUT optimization
+    // 4. First attempt without LUT
     try {
-      const result = await verifyBuilder
-        .setAddressLookupTables(lutAccounts)
-        .sendAndConfirm(umi);
-
+      const result = await verifyBuilder.sendAndConfirm(umi);
       const signature = bs58.encode(Buffer.from(result.signature));
       
-      res.json({
+      return res.json({
         success: true,
-        message: 'cNFT collection verification successful',
+        message: 'cNFT collection verification successful (without LUT)',
         assetId: assetId.toString(),
         leafIndex: leafIndex,
         collectionMint: collectionMint.toString(),
-        transactionSignature: signature,
-        lutAccounts: lutAccounts.map(account => account.toString())
+        transactionSignature: signature
       });
-    } catch (txError) {
-      // Fallback to simplified verification if needed
-      if (txError.message && txError.message.includes('too large')) {
-        console.log('Transaction too large, attempting simplified verification...');
-        
-        const simplifiedAssetWithProof = await getAssetWithProof(umi, assetId, {
-          truncateCanopy: true,
-          canopyDepth: 5
-        });
-        
-        const simplifiedBuilder = verifyCollection(umi, {
-          ...simplifiedAssetWithProof,
-          collectionMint: collectionMint,
-          collectionAuthority: umi.identity
-        });
+    } catch (initialError) {
+      // Only proceed with LUT if the error is transaction size related
+      if (!initialError.message.includes('too large')) {
+        throw initialError;
+      }
 
-        // Create new LUTs for the simplified transaction
-        const [simplifiedLutBuilders, simplifiedLutAccounts] = createLutForTransactionBuilder(
-          umi,
-          simplifiedBuilder,
-          recentSlot
-        );
+      console.log('Transaction too large, attempting with LUT optimization...');
+      
+      // 5. Prepare LUT with essential addresses
+      const recentSlot = await umi.rpc.getSlot({ commitment: 'finalized' });
+      const essentialAddresses = [
+        assetId,
+        collectionMint,
+        umi.identity.publicKey,
+        // Add other essential addresses from your program
+        // merkleTreeLink, etc.
+      ].filter((addr, index, self) => 
+        index === self.findIndex((a) => a.equals(addr))
+      );
 
-        if (simplifiedLutBuilders.length > 0) {
-          for (const createLutBuilder of simplifiedLutBuilders) {
-            await createLutBuilder.sendAndConfirm(umi);
-          }
-        }
+      // 6. Create LUT with essential addresses
+      const lutCreationResult = await createLut(umi, {
+        recentSlot,
+        authority: umi.identity,
+        addresses: essentialAddresses,
+      }).sendAndConfirm(umi);
 
-        const result = await simplifiedBuilder
-          .setAddressLookupTables(simplifiedLutAccounts)
+      const lutAddress = lutCreationResult[0];
+
+      // 7. Verify with LUT
+      try {
+        const result = await verifyBuilder
+          .setAddressLookupTables([{ publicKey: lutAddress }])
           .sendAndConfirm(umi);
-        
+
         const signature = bs58.encode(Buffer.from(result.signature));
         
-        res.json({
+        return res.json({
           success: true,
-          message: 'cNFT collection verification successful (with reduced proof size)',
+          message: 'cNFT collection verification successful (with LUT)',
           assetId: assetId.toString(),
           leafIndex: leafIndex,
           collectionMint: collectionMint.toString(),
           transactionSignature: signature,
-          lutAccounts: simplifiedLutAccounts.map(account => account.toString())
+          lutAddress: lutAddress.toString()
         });
-      } else {
-        throw txError;
+      } catch (lutError) {
+        console.error('LUT verification failed:', lutError);
+        
+        // Final fallback to simplified verification
+        if (lutError.message.includes('too large') || lutError.message.includes('invalid index')) {
+          console.log('Attempting simplified verification...');
+          
+          const simplifiedAssetWithProof = await getAssetWithProof(umi, assetId, {
+            truncateCanopy: true,
+            canopyDepth: 5
+          });
+          
+          const simplifiedResult = await verifyCollection(umi, {
+            ...simplifiedAssetWithProof,
+            collectionMint: collectionMint,
+            collectionAuthority: umi.identity
+          }).sendAndConfirm(umi);
+          
+          const signature = bs58.encode(Buffer.from(simplifiedResult.signature));
+          
+          return res.json({
+            success: true,
+            message: 'cNFT collection verification successful (simplified proof)',
+            assetId: assetId.toString(),
+            leafIndex: leafIndex,
+            collectionMint: collectionMint.toString(),
+            transactionSignature: signature
+          });
+        }
+        throw lutError;
       }
     }
 
   } catch (error) {
     console.error('Collection verification failed:', error);
+    
+    // Extract more detailed error information
+    let errorDetails = error.message;
+    if (error.logs) {
+      errorDetails += `\nLogs: ${JSON.stringify(error.logs, null, 2)}`;
+    }
+    
     res.status(500).json({
       success: false,
-      error: error.message,
-      details: 'Make sure the leaf index is correct and you have authority over the collection'
+      error: 'Verification failed',
+      details: errorDetails,
+      suggestion: 'Please ensure the leaf index is correct and the collection authority is properly set'
     });
   }
 });
-
 //--------------------------- verify cNFT Collection ---------------------------------//
 
 
