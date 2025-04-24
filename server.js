@@ -3,7 +3,8 @@ const express = require('express');
 const cors = require('cors');
 const { createUmi } = require('@metaplex-foundation/umi-bundle-defaults');
 const { keypairIdentity, transactionBuilder, generateSigner } = require('@metaplex-foundation/umi');
-const { mplTokenMetadata, createNft, verifyCollection, setAndVerifyCollection, findMetadataPda, findMasterEditionPda, findCollectionAuthorityRecordPda, findDelegateRecordPda } = require('@metaplex-foundation/mpl-token-metadata');
+const { mplTokenMetadata, createNft, findMetadataPda, verifyCollection: verifyTokenCollection, setAndVerifyCollection: setAndVerifyTokenCollection,
+       findMasterEditionPda, findCollectionAuthorityRecordPda, findDelegateRecordPda } = require('@metaplex-foundation/mpl-token-metadata');
 const { setComputeUnitLimit, createLut  } = require('@metaplex-foundation/mpl-toolbox');
 const { Connection, SystemProgram, PublicKey, LAMPORTS_PER_SOL, Keypair } = require('@solana/web3.js');
 const bs58 = require('bs58');
@@ -25,20 +26,19 @@ const MINT_TRACKING_FILE = path.join(__dirname, 'mint-tracking.json');
 // const { Octokit } = require('@octokit/rest');
 // At the top with other imports
 const { updateFileOnGitHub } = require('./githubHelper');
-
 const {
   createTree,
   mplBubblegum,
   fetchMerkleTree,
   fetchTreeConfigFromSeeds,
-  //verifyCollection,
+  verifyCollection: verifyBubblegumCollection,
   TokenProgramVersion,
   getAssetWithProof,
   findLeafAssetIdPda,
   LeafSchema,
   mintToCollectionV1,
   parseLeafFromMintToCollectionV1Transaction,
-  //setAndVerifyCollection,
+  setAndVerifyCollection: setAndVerifyBubblegumCollection,
   fetchDigitalAsset
 } = require('@metaplex-foundation/mpl-bubblegum');
 
@@ -804,54 +804,29 @@ app.use((err, req, res, next) => {
 app.post('/api/setAndVerifyCollection', async (req, res) => {
   try {
     const collectionMint = UMIPublicKey("73itZp41Td5nj8z2AnQhGmbequoqtPNXvjxbDw1hj3Rn");
+    
+    console.log('Attempting to set and verify collection...');
+    console.log(`Collection mint: ${collectionMint.toString()}`);
 
+    // Make sure we're using the setAndVerifyCollection from mpl-token-metadata
+    const tokenMetadataProgramId = mplTokenMetadata.PROGRAM_ID;
+    
+    // Define metadata and master edition PDAs
     const metadata = findMetadataPda(umi, { mint: collectionMint });
     const masterEdition = findMasterEditionPda(umi, { mint: collectionMint });
-
-    const collectionAuthorityRecord = findCollectionAuthorityRecordPda(umi, {
-      mint: collectionMint,
-      collectionAuthority: umi.identity.publicKey,
-    });
-
-    /*const delegateRecord = findDelegateRecordPda(umi, {
-      mint: collectionMint,
-      updateAuthority: umi.identity.publicKey,
-      delegateRole: 4, // Collection verification role (enum: Collection)
-      delegate: umi.identity.publicKey,
-    });*/
-
-    const delegateRecordPda = await findPda(umi, [
-      Buffer.from('metadata'),
-      programId.toBuffer(),
-      collectionMint.toBuffer(),
-      Buffer.from('delegate'),
-      umi.identity.publicKey.toBuffer(),
-    ]);
     
-
-    /*const tx = await setAndVerifyCollection(umi, {
-      metadata,
+    // Execute the transaction
+    const tx = await setAndVerifyCollection(umi, {
+      metadata: metadata,
       collectionAuthority: umi.identity,
       payer: umi.identity,
-      collectionMint,
-      collectionMetadata: metadata,
+      collectionMint: collectionMint,
+      collectionMetadata: metadata, // Use the same metadata PDA
       collectionMasterEdition: masterEdition,
-      collectionAuthorityRecord,
-      delegateRecord
-    }).sendAndConfirm(umi);*/
-
-    await setAndVerifyCollection(umi, {
-      metadata: findMetadataPda(umi, { mint: collectionMint }),
-      collectionAuthority: umi.identity,
-      payer: umi.identity,
-      collectionMint,
-      collectionMetadata: findMetadataPda(umi, { mint: collectionMint }),
-      collectionMasterEdition: findMasterEditionPda(umi, { mint: collectionMint }),
-      delegateRecord: delegateRecordPda,
     }).sendAndConfirm(umi);
-    
 
     console.log("✅ Collection NFT has been verified");
+    console.log('Transaction signature:', tx.signature.toString());
 
     return res.status(200).json({
       success: true,
