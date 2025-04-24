@@ -823,21 +823,19 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       truncateCanopy: true
     });
 
-    // 3. Create the verify collection transaction builder
-    const verifyBuilder = verifyCollection(umi, {
-      ...assetWithProof,
-      collectionMint: collectionMint,
-      collectionAuthority: umi.identity
-    });
-
-    // 4. First attempt without LUT
+    // 3. First attempt without LUT
     try {
-      const result = await verifyBuilder.sendAndConfirm(umi);
+      const result = await verifyCollection(umi, {
+        ...assetWithProof,
+        collectionMint: collectionMint,
+        collectionAuthority: umi.identity
+      }).sendAndConfirm(umi);
+
       const signature = bs58.encode(Buffer.from(result.signature));
       
       return res.json({
         success: true,
-        message: 'cNFT collection verification successful (without LUT)',
+        message: 'cNFT collection verification successful',
         assetId: assetId.toString(),
         leafIndex: leafIndex,
         collectionMint: collectionMint.toString(),
@@ -851,32 +849,45 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
 
       console.log('Transaction too large, attempting with LUT optimization...');
       
-      // 5. Prepare LUT with essential addresses
+      // 4. Prepare LUT with essential addresses (using string comparison)
       const recentSlot = await umi.rpc.getSlot({ commitment: 'finalized' });
       const essentialAddresses = [
         assetId,
         collectionMint,
         umi.identity.publicKey,
-        // Add other essential addresses from your program
-        // merkleTreeLink, etc.
-      ].filter((addr, index, self) => 
-        index === self.findIndex((a) => a.equals(addr))
-      );
+        // Add other essential addresses
+      ];
 
-      // 6. Create LUT with essential addresses
+      // Convert all addresses to strings for comparison
+      const uniqueAddresses = essentialAddresses.reduce((acc, addr) => {
+        const addrStr = addr.toString();
+        if (!acc.some(a => a.toString() === addrStr)) {
+          acc.push(addr);
+        }
+        return acc;
+      }, []);
+
+      // 5. Create LUT with unique addresses
       const lutCreationResult = await createLut(umi, {
         recentSlot,
         authority: umi.identity,
-        addresses: essentialAddresses,
+        addresses: uniqueAddresses,
       }).sendAndConfirm(umi);
 
       const lutAddress = lutCreationResult[0];
 
-      // 7. Verify with LUT
+      // Small delay to ensure LUT is propagated
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // 6. Verify with LUT
       try {
-        const result = await verifyBuilder
-          .setAddressLookupTables([{ publicKey: lutAddress }])
-          .sendAndConfirm(umi);
+        const result = await verifyCollection(umi, {
+          ...assetWithProof,
+          collectionMint: collectionMint,
+          collectionAuthority: umi.identity
+        })
+        .setAddressLookupTables([{ publicKey: lutAddress }])
+        .sendAndConfirm(umi);
 
         const signature = bs58.encode(Buffer.from(result.signature));
         
@@ -921,11 +932,9 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
         throw lutError;
       }
     }
-
   } catch (error) {
     console.error('Collection verification failed:', error);
     
-    // Extract more detailed error information
     let errorDetails = error.message;
     if (error.logs) {
       errorDetails += `\nLogs: ${JSON.stringify(error.logs, null, 2)}`;
@@ -935,7 +944,7 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       success: false,
       error: 'Verification failed',
       details: errorDetails,
-      suggestion: 'Please ensure the leaf index is correct and the collection authority is properly set'
+      suggestion: 'Please ensure the leaf index is correct and try again'
     });
   }
 });
