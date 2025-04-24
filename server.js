@@ -7,7 +7,7 @@ const { mplTokenMetadata, createNft, verifyCollection, setAndVerifyCollection, f
 const { setComputeUnitLimit, createLut  } = require('@metaplex-foundation/mpl-toolbox');
 const { Connection, SystemProgram, PublicKey, LAMPORTS_PER_SOL, Keypair } = require('@solana/web3.js');
 const bs58 = require('bs58');
-const { publicKey: UMIPublicKey, percentAmount } = require('@metaplex-foundation/umi');
+const { publicKey: UMIPublicKey, percentAmount, findPda } = require('@metaplex-foundation/umi');
 const path = require('path');
 const bodyParser = require('body-parser');
 const axios = require('axios');
@@ -813,14 +813,23 @@ app.post('/api/setAndVerifyCollection', async (req, res) => {
       collectionAuthority: umi.identity.publicKey,
     });
 
-    const delegateRecord = findDelegateRecordPda(umi, {
+    /*const delegateRecord = findDelegateRecordPda(umi, {
       mint: collectionMint,
       updateAuthority: umi.identity.publicKey,
       delegateRole: 4, // Collection verification role (enum: Collection)
       delegate: umi.identity.publicKey,
-    });
+    });*/
 
-    const tx = await setAndVerifyCollection(umi, {
+    const delegateRecordPda = await findPda(umi, [
+      Buffer.from('metadata'),
+      programId.toBuffer(),
+      collectionMint.toBuffer(),
+      Buffer.from('delegate'),
+      umi.identity.publicKey.toBuffer(),
+    ]);
+    
+
+    /*const tx = await setAndVerifyCollection(umi, {
       metadata,
       collectionAuthority: umi.identity,
       payer: umi.identity,
@@ -829,7 +838,18 @@ app.post('/api/setAndVerifyCollection', async (req, res) => {
       collectionMasterEdition: masterEdition,
       collectionAuthorityRecord,
       delegateRecord
+    }).sendAndConfirm(umi);*/
+
+    await setAndVerifyCollection(umi, {
+      metadata: findMetadataPda(umi, { mint: collectionMint }),
+      collectionAuthority: umi.identity,
+      payer: umi.identity,
+      collectionMint,
+      collectionMetadata: findMetadataPda(umi, { mint: collectionMint }),
+      collectionMasterEdition: findMasterEditionPda(umi, { mint: collectionMint }),
+      delegateRecord: delegateRecordPda,
     }).sendAndConfirm(umi);
+    
 
     console.log("✅ Collection NFT has been verified");
 
