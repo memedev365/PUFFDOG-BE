@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { createUmi } = require('@metaplex-foundation/umi-bundle-defaults');
 const { keypairIdentity, transactionBuilder, generateSigner } = require('@metaplex-foundation/umi');
-const { mplTokenMetadata, createNft, findMetadataPda, verifyCollection, setAndVerifyCollection,
+const { mplTokenMetadata, createNft, findMetadataPda, verifyCollection, setAndVerifyCollection, verifyCollectionV1,
        findMasterEditionPda, findCollectionAuthorityRecordPda, findDelegateRecordPda } = require('@metaplex-foundation/mpl-token-metadata');
 const { setComputeUnitLimit, createLut  } = require('@metaplex-foundation/mpl-toolbox');
 const { Connection, SystemProgram, PublicKey, LAMPORTS_PER_SOL, Keypair } = require('@solana/web3.js');
@@ -804,44 +804,21 @@ app.use((err, req, res, next) => {
 app.post('/api/setAndVerifyCollection', async (req, res) => {
   try {
     const collectionMint = UMIPublicKey("73itZp41Td5nj8z2AnQhGmbequoqtPNXvjxbDw1hj3Rn");
-    
-    console.log('Attempting to set and verify collection...');
-    console.log(`Collection mint: ${collectionMint.toString()}`);
 
-    // Make sure we're using the setAndVerifyCollection from mpl-token-metadata
-    const tokenMetadataProgramId = mplTokenMetadata.PROGRAM_ID;
-    
-    // Define metadata and master edition PDAs
-    const metadata = findMetadataPda(umi, { mint: collectionMint });
-    const masterEdition = findMasterEditionPda(umi, { mint: collectionMint });
-    
-    // Execute the transaction
-    const tx = await setAndVerifyCollection(umi, {
-      metadata: metadata,
-      collectionAuthority: umi.identity,
-      payer: umi.identity,
-      collectionMint: collectionMint,
-      collectionMetadata: metadata, // Use the same metadata PDA
-      collectionMasterEdition: masterEdition,
-    }).sendAndConfirm(umi);
-
-    console.log("✅ Collection NFT has been verified");
-    console.log('Transaction signature:', tx.signature.toString());
-
-    return res.status(200).json({
-      success: true,
-      message: 'NFT successfully verified as collection',
-      transactionSignature: tx.signature.toString()
-    });
-
-  } catch (err) {
-    console.error("❌ Failed to verify collection:", err);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to verify NFT as collection',
-      error: err.message
-    });
+       // first find the metadata PDA to use later
+       const metadata = findMetadataPda(umi, { 
+         mint: collectionMint
+       });
+       
+       await verifyCollectionV1(umi, {
+         metadata,
+         collectionMint,
+         authority: collectionAuthority,
+       }).sendAndConfirm(umi)
+  } catch(err){
+         console.log("err :" + err);
   }
+    
 });
 
 app.post('/api/parentNFTVerify', async (req, res) => {
