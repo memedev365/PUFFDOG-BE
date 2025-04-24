@@ -819,34 +819,37 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
     })[0];
     console.log(`Asset ID: ${assetId.toString()}`);
     
-    // Get asset data without full proof
-    console.log("Fetching digital asset...");
-    const asset = await fetchDigitalAsset(umi, assetId);
+    // Get the asset with proof data - we'll use this directly
+    console.log("Fetching asset with proof...");
+    const assetWithProof = await getAssetWithProof(umi, assetId, {
+      truncateCanopy: true // Try to reduce proof size
+    });
     
-    // Create a verification instruction builder
+    // Create a verification builder
     console.log("Creating verification builder...");
     const builder = verifyCollection(umi, {
-      leafOwner: asset.ownership.owner,
-      merkleTree: merkleTreeLink,
+      ...assetWithProof,
       collectionMint: collectionMint,
-      collectionAuthority: umi.identity,
-      // Skip the full proof data to reduce transaction size
-      proof: [] // Empty proof since we'll use skipPreflight
+      collectionAuthority: umi.identity
     });
     
-    console.log("Preparing to send transaction...");
-    // Build and sign the transaction 
-    const tx = await builder.buildAndSign(umi);
+    console.log("Building transaction...");
+    // Get transaction instructions
+    const blockhash = await umi.rpc.getLatestBlockhash();
+    const tx = await builder.buildAndSign(umi, blockhash);
     
-    // Send raw transaction with skipPreflight to bypass size checks
+    // Send transaction with skipPreflight
     console.log("Sending transaction with skipPreflight...");
-    const signature = await umi.rpc.sendTransaction(tx, {
-      skipPreflight: true // Critical: This bypasses the transaction size check
+    const connection = umi.rpc.getConnection();
+    
+    // Use the lower-level sendRawTransaction method with skipPreflight
+    const rawTx = tx.serialize();
+    const signature = await connection.sendRawTransaction(rawTx, {
+      skipPreflight: true,
+      maxRetries: 5
     });
     
-    // Convert signature to readable format
-    const signatureStr = bs58.encode(Buffer.from(signature));
-    console.log(`Transaction sent: ${signatureStr}`);
+    console.log(`Transaction sent with signature: ${signature}`);
     
     res.json({
       success: true,
@@ -854,7 +857,7 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       assetId: assetId.toString(),
       leafIndex: leafIndex,
       collectionMint: collectionMint.toString(),
-      transactionSignature: signatureStr
+      transactionSignature: signature
     });
   } catch (error) {
     console.error('Collection verification failed:', error);
