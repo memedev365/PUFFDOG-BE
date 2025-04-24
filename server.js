@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { createUmi } = require('@metaplex-foundation/umi-bundle-defaults');
 const { keypairIdentity, transactionBuilder, generateSigner } = require('@metaplex-foundation/umi');
-const { mplTokenMetadata, createNft, findMetadataPda, verifyCollection: verifyTokenCollection, setAndVerifyCollection: setAndVerifyTokenCollection,
+const { mplTokenMetadata, createNft, findMetadataPda, verifyCollection, setAndVerifyCollection,
        findMasterEditionPda, findCollectionAuthorityRecordPda, findDelegateRecordPda } = require('@metaplex-foundation/mpl-token-metadata');
 const { setComputeUnitLimit, createLut  } = require('@metaplex-foundation/mpl-toolbox');
 const { Connection, SystemProgram, PublicKey, LAMPORTS_PER_SOL, Keypair } = require('@solana/web3.js');
