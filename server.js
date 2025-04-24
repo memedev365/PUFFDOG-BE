@@ -801,6 +801,44 @@ app.use((err, req, res, next) => {
 
 //--------------------------- verify cNFT Collection ---------------------------------//
 
+app.post('/api/parentNFTVerify', async (req, res) => {
+  try {
+    const parentNftMint = UMIPublicKey('73itZp41Td5nj8z2AnQhGmbequoqtPNXvjxbDw1hj3Rn');
+    const updateAuthority = UMIPublicKey('4mGCSmGmfAfq7uvLpV39uQRTLuveGX2EHk6iuN38YRLn');
+    
+    console.log('Attempting to verify parent NFT as collection...');
+    console.log(`Parent NFT mint: ${parentNftMint.toString()}`);
+    console.log(`Update authority: ${updateAuthority.toString()}`);
+    
+    // Verify the parent NFT as a collection
+    const transaction = await verifyCollection(umi, {
+      mint: parentNftMint,
+      collectionAuthority: updateAuthority,
+      isDelegated: false, // Set to true only if you're using a delegated authority
+    }).sendAndConfirm(umi);
+    
+    console.log('Collection verification successful');
+    console.log('Transaction signature:', transaction.signature.toString());
+    
+    // Return success response
+    return res.status(200).json({
+      success: true,
+      message: 'Parent NFT successfully verified as collection',
+      transactionSignature: transaction.signature.toString()
+    });
+  } catch (err) {
+    console.error('Error verifying parent NFT as collection:', err);
+    
+    // Return error response
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to verify parent NFT as collection',
+      error: err.message
+    });
+  }
+});
+
+
 app.post('/api/verifyCNFTCollection', async (req, res) => {
   try {
     const { leafIndex } = req.body;
