@@ -862,6 +862,8 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
     const assetWithProof = await getAssetWithProof(umi, assetIdPubkey, {
       truncateCanopy: true
     });
+
+   console.log('[verifyCNFTCollection] 🔍 assetWithProof:', JSON.stringify(assetWithProof, null, 2));
     console.log('[verifyCNFTCollection] ✅ Asset with proof fetched');
 
     // Step 3: Build verification transaction
