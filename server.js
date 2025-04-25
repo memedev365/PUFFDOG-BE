@@ -855,7 +855,7 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       merkleTree: merkleTreeLink,
       leafIndex: leafIndex
     })[0];
-    console.log(`[verifyCNFTCollection] 🧩 Asset ID derived: ${assetIdPubkey.toBase58()}`);
+    console.log(`[verifyCNFTCollection] 🧩 Asset ID derived: ${assetIdPubkey}`);
 
     // Step 2: Get asset with proof
     console.log('[verifyCNFTCollection] 📦 Fetching asset with proof...');
