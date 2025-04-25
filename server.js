@@ -801,25 +801,6 @@ app.use((err, req, res, next) => {
 
 //--------------------------- verify cNFT Collection ---------------------------------//
 
-app.post('/api/setAndVerifyCollection', async (req, res) => {
-  try {
-    const collectionMint = UMIPublicKey("73itZp41Td5nj8z2AnQhGmbequoqtPNXvjxbDw1hj3Rn");
-
-       // first find the metadata PDA to use later
-       const metadata = findMetadataPda(umi, { 
-         mint: collectionMint
-       });
-       
-       await verifyCollectionV1(umi, {
-         metadata,
-         collectionMint,
-         authority: umi.identity,
-       }).sendAndConfirm(umi)
-         } catch(err){
-         console.log("err :" + err);
-  }
-    
-});
 
 app.post('/api/parentNFTVerify', async (req, res) => {
   try {
