@@ -840,11 +840,14 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
     const { leafIndex } = req.body;
 
     if (leafIndex === undefined) {
+      console.warn('Missing leafIndex in request body');
       return res.status(400).json({
         success: false,
         error: 'Leaf index is required'
       });
     }
+
+    console.log(`📌 Starting cNFT verification for leafIndex: ${leafIndex}`);
 
     // 1. Get the asset ID
     const assetId = findLeafAssetIdPda(umi, {
@@ -852,13 +855,18 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       leafIndex: leafIndex
     })[0];
 
+    console.log(`🆔 Derived assetId: ${assetId.toString()}`);
+
     // 2. Get the asset with proof data
     const assetWithProof = await getAssetWithProof(umi, assetId, {
       truncateCanopy: true
     });
 
+    console.log('🧾 Retrieved asset with proof');
+
     // 3. First attempt without LUT
     try {
+      console.log('🚀 Attempting verification WITHOUT LUT...');
       const result = await verifyCollection(umi, {
         ...assetWithProof,
         collectionMint: collectionMint,
@@ -866,7 +874,9 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       }).sendAndConfirm(umi);
 
       const signature = bs58.encode(Buffer.from(result.signature));
-      
+
+      console.log(`✅ Verification successful. Signature: ${signature}`);
+
       return res.json({
         success: true,
         message: 'cNFT collection verification successful',
@@ -876,23 +886,25 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
         transactionSignature: signature
       });
     } catch (initialError) {
-      // Only proceed with LUT if the error is transaction size related
+      console.warn('⚠️ Initial verification failed:', initialError.message);
+
       if (!initialError.message.includes('too large')) {
         throw initialError;
       }
 
-      console.log('Transaction too large, attempting with LUT optimization...');
-      
-      // 4. Prepare LUT with essential addresses (using string comparison)
+      console.log('💡 Transaction too large — attempting with LUT optimization...');
+
+      // 4. Prepare LUT with essential addresses
       const recentSlot = await umi.rpc.getSlot({ commitment: 'finalized' });
+      console.log(`📦 Recent slot: ${recentSlot}`);
+
       const essentialAddresses = [
         assetId,
         collectionMint,
         umi.identity.publicKey,
-        // Add other essential addresses
+        // Add other essential addresses if needed
       ];
 
-      // Convert all addresses to strings for comparison
       const uniqueAddresses = essentialAddresses.reduce((acc, addr) => {
         const addrStr = addr.toString();
         if (!acc.some(a => a.toString() === addrStr)) {
@@ -901,7 +913,9 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
         return acc;
       }, []);
 
-      // 5. Create LUT with unique addresses
+      console.log(`🔍 Unique addresses for LUT:`, uniqueAddresses.map(a => a.toString()));
+
+      // 5. Create LUT
       const lutCreationResult = await createLut(umi, {
         recentSlot,
         authority: umi.identity,
@@ -909,12 +923,14 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
       }).sendAndConfirm(umi);
 
       const lutAddress = lutCreationResult[0];
+      console.log(`📘 Created LUT at: ${lutAddress.toString()}`);
 
-      // Small delay to ensure LUT is propagated
+      // Small delay to ensure LUT is ready
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      // 6. Verify with LUT
+      // 6. Try again with LUT
       try {
+        console.log('🚀 Attempting verification WITH LUT...');
         const result = await verifyCollection(umi, {
           ...assetWithProof,
           collectionMint: collectionMint,
@@ -924,7 +940,8 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
         .sendAndConfirm(umi);
 
         const signature = bs58.encode(Buffer.from(result.signature));
-        
+        console.log(`✅ Verification with LUT successful. Signature: ${signature}`);
+
         return res.json({
           success: true,
           message: 'cNFT collection verification successful (with LUT)',
@@ -935,25 +952,26 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
           lutAddress: lutAddress.toString()
         });
       } catch (lutError) {
-        console.error('LUT verification failed:', lutError);
-        
-        // Final fallback to simplified verification
+        console.error('❌ LUT verification failed:', lutError.message);
+
+        // Fallback: Simplified verification with smaller proof
         if (lutError.message.includes('too large') || lutError.message.includes('invalid index')) {
-          console.log('Attempting simplified verification...');
-          
+          console.log('🔄 Trying simplified verification (truncated proof)...');
+
           const simplifiedAssetWithProof = await getAssetWithProof(umi, assetId, {
             truncateCanopy: true,
             canopyDepth: 5
           });
-          
+
           const simplifiedResult = await verifyCollection(umi, {
             ...simplifiedAssetWithProof,
             collectionMint: collectionMint,
             collectionAuthority: umi.identity
           }).sendAndConfirm(umi);
-          
+
           const signature = bs58.encode(Buffer.from(simplifiedResult.signature));
-          
+          console.log(`✅ Simplified verification successful. Signature: ${signature}`);
+
           return res.json({
             success: true,
             message: 'cNFT collection verification successful (simplified proof)',
@@ -963,17 +981,18 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
             transactionSignature: signature
           });
         }
+
         throw lutError;
       }
     }
   } catch (error) {
-    console.error('Collection verification failed:', error);
-    
+    console.error('🔥 Collection verification failed:', error);
+
     let errorDetails = error.message;
     if (error.logs) {
       errorDetails += `\nLogs: ${JSON.stringify(error.logs, null, 2)}`;
     }
-    
+
     res.status(500).json({
       success: false,
       error: 'Verification failed',
@@ -982,6 +1001,7 @@ app.post('/api/verifyCNFTCollection', async (req, res) => {
     });
   }
 });
+
 //--------------------------- verify cNFT Collection ---------------------------------//
 
 
