@@ -403,12 +403,20 @@ app.post('/api/mint', async (req, res) => {
   }
 });
 
+// Replace the airdrop endpoint in your backend (around line 288)
 app.post('/api/airdrop', async (req, res) => {
   try {
     const { userWallet, nftId } = req.body;
     
+    console.log("Received airdrop request:", { userWallet, nftId, body: req.body });
+    
     // Authentication check - only allow the authorized wallet
-    if (req.headers.authorization !== `Bearer ${AUTHORIZED_WALLET}`) {
+    const authHeader = req.headers.authorization;
+    console.log("Auth header:", authHeader);
+    console.log("Expected wallet:", AUTHORIZED_WALLET);
+    
+    if (!authHeader || authHeader !== `Bearer ${AUTHORIZED_WALLET}`) {
+      console.error("Unauthorized airdrop attempt:", { authHeader, expected: `Bearer ${AUTHORIZED_WALLET}` });
       return res.status(401).json({
         success: false,
         error: {
@@ -419,37 +427,56 @@ app.post('/api/airdrop', async (req, res) => {
       });
     }
     
-    console.log("Received airdrop request:", { userWallet, nftId });
-    
     // Validate inputs
-    /*if (!userWallet || !nftId) {
+    if (!userWallet || nftId === undefined || nftId === null) {
+      console.error("Missing required fields:", { userWallet, nftId });
       return res.status(400).json({
         success: false,
         error: {
           code: 'INVALID_REQUEST',
           message: 'Wallet address and NFT ID are required',
+          timestamp: new Date().toISOString(),
+          received: { userWallet, nftId }
+        }
+      });
+    }
+    
+    // Validate wallet address format
+    try {
+      new PublicKey(userWallet);
+    } catch (err) {
+      console.error("Invalid wallet address:", userWallet);
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_WALLET',
+          message: 'Invalid wallet address format',
           timestamp: new Date().toISOString()
         }
       });
-    }*/
+    }
     
     // Convert nftId to number if it's a string
     const nftNumber = typeof nftId === 'string' ? parseInt(nftId, 10) : nftId;
     
     // Validate NFT ID
     if (isNaN(nftNumber) || nftNumber < 0 || nftNumber >= 10000) {
+      console.error("Invalid NFT ID:", { nftId, nftNumber });
       return res.status(400).json({
         success: false,
         error: {
           code: 'INVALID_NFT_ID',
           message: 'NFT ID must be a valid number between 0 and 9999',
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          received: { nftId, parsed: nftNumber }
         }
       });
     }
     
     // Check if NFT ID has already been minted
-    if (await isIdMinted(nftNumber)) {
+    const isAlreadyMinted = await isIdMinted(nftNumber);
+    if (isAlreadyMinted) {
+      console.error("NFT already minted:", nftNumber);
       return res.status(409).json({
         success: false,
         error: {
@@ -463,84 +490,113 @@ app.post('/api/airdrop', async (req, res) => {
     // NFT MINTING PROCESS
     const nftName = `PUFF DOG #${nftNumber.toString().padStart(4, '0')}`;
 
-    console.log(`Airdropping NFT: ${nftName} (${nftNumber})`);
+    console.log(`Starting airdrop for NFT: ${nftName} (${nftNumber}) to ${userWallet}`);
 
-    const uintSig = await transactionBuilder()
-      .add(setComputeUnitLimit(umi, { units: 800_000 }))
-      .add(await mintToCollectionV1(umi, {
-        leafOwner: UMIPublicKey(userWallet),
-        merkleTree: merkleTreeLink,
-        collectionMint: collectionMint,
-        metadata: {
-          name: nftName,
-          symbol:'PUFF',
-          uri: `https://peach-binding-gamefowl-763.mypinata.cloud/ipfs/bafybeidr3ovs3w2i3p7mzmh6getgjgjqohfplktzadtwa4vsbdfyrlxrfy/${nftNumber}.json`,
-          sellerFeeBasisPoints: 500,
-          collection: {
-            key: collectionMint,
-            verified: true
+    try {
+      const uintSig = await transactionBuilder()
+        .add(setComputeUnitLimit(umi, { units: 800_000 }))
+        .add(await mintToCollectionV1(umi, {
+          leafOwner: UMIPublicKey(userWallet),
+          merkleTree: merkleTreeLink,
+          collectionMint: collectionMint,
+          metadata: {
+            name: nftName,
+            symbol: 'PUFF',
+            uri: `https://peach-binding-gamefowl-763.mypinata.cloud/ipfs/bafybeidr3ovs3w2i3p7mzmh6getgjgjqohfplktzadtwa4vsbdfyrlxrfy/${nftNumber}.json`,
+            sellerFeeBasisPoints: 500,
+            collection: {
+              key: collectionMint,
+              verified: true
+            },
+            creators: [{
+              address: umi.identity.publicKey,
+              verified: true,
+              share: 100
+            }],
           },
-          creators: [{
-            address: umi.identity.publicKey,
-            verified: true,
-            share: 100
-          }],
-        },
-      }));
+        }));
 
-    const { signature: mintSignature } = await uintSig.sendAndConfirm(umi, {
-      confirm: { commitment: "finalized" },
-      send: {
-        skipPreflight: true,
-      }
-    });
+      console.log("Transaction built, sending to blockchain...");
 
-    const leaf = await parseLeafFromMintToCollectionV1Transaction(
-      umi,
-      mintSignature
-    );
-
-    const assetId = findLeafAssetIdPda(umi, {
-      merkleTree: merkleTreeLink,
-      leafIndex: leaf.nonce,
-    })[0];
-
-    console.log("NFT airdropped successfully:", {
-      nftNumber,
-      userWallet,
-      mintSignature: mintSignature
-    });
-
-    // Record the minted ID in our tracking system WITHOUT updating lastMintedId
-    await recordAirdropMintedId(nftNumber);
-
-    res.json({
-      success: true,
-      nftId: assetId,
-      imageUrl: `https://peach-binding-gamefowl-763.mypinata.cloud/ipfs/QmY2PNF1rB6k4inLZMUqrt17cH9wpzXqgZ1fFv64SqYcxG/${nftNumber}.png`,
-      name: nftName,
-      details: {
-        airdropDetails: {
-          recipient: userWallet,
-          transactionId: mintSignature
+      const { signature: mintSignature } = await uintSig.sendAndConfirm(umi, {
+        confirm: { commitment: "finalized" },
+        send: {
+          skipPreflight: true,
         }
-      }
-    });
+      });
+
+      console.log("Mint signature received:", mintSignature);
+
+      const leaf = await parseLeafFromMintToCollectionV1Transaction(
+        umi,
+        mintSignature
+      );
+
+      const assetId = findLeafAssetIdPda(umi, {
+        merkleTree: merkleTreeLink,
+        leafIndex: leaf.nonce,
+      })[0];
+
+      console.log("NFT airdropped successfully:", {
+        nftNumber,
+        userWallet,
+        mintSignature: mintSignature.toString(),
+        assetId: assetId.toString()
+      });
+
+      // Record the minted ID in our tracking system WITHOUT updating lastMintedId
+      await recordAirdropMintedId(nftNumber);
+      console.log("Mint tracking updated successfully");
+
+      res.json({
+        success: true,
+        nftId: assetId.toString(),
+        imageUrl: `https://peach-binding-gamefowl-763.mypinata.cloud/ipfs/QmY2PNF1rB6k4inLZMUqrt17cH9wpzXqgZ1fFv64SqYcxG/${nftNumber}.png`,
+        name: nftName,
+        details: {
+          airdropDetails: {
+            recipient: userWallet,
+            transactionId: mintSignature.toString()
+          }
+        }
+      });
+
+    } catch (mintError) {
+      console.error('Minting process failed:', {
+        error: mintError.message,
+        stack: mintError.stack,
+        nftNumber,
+        userWallet
+      });
+      
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'MINT_FAILED',
+          message: `Failed to mint NFT: ${mintError.message}`,
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
   } catch (error) {
-    console.error('Airdrop error:', {
+    console.error('Airdrop endpoint error:', {
       error: error.message,
       stack: error.stack,
-      body: req.body
+      body: req.body,
+      headers: req.headers
     });
 
     res.status(500).json({
       success: false,
-      error: error.message || 'Airdrop failed',
-      details: error.details || null
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Airdrop failed',
+        timestamp: new Date().toISOString()
+      }
     });
   }
 });
-
 
 async function recordAirdropMintedId(id) {
   const trackingData = await loadMintTrackingData();
